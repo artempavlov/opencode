@@ -3,6 +3,7 @@
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+- This local checkout carries a Bun SQLite contention patch. See `SQLITE-CONCURRENCY-FIX.md` for its bounds, isolated regression tests, build, installation, and rollback. Never run contention tests against the production database.
 
 ## Branch Names
 
