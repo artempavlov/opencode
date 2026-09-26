@@ -9,7 +9,7 @@ import {
 import type { Binding } from "@opentui/keymap"
 import { useTheme, selectedForeground } from "../context/theme"
 import { entries, filter, flatMap, groupBy, pipe } from "remeda"
-import { batch, createEffect, createMemo, createSignal, For, Show, type JSX, on, onCleanup } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, For, Index, Show, type JSX, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTerminalDimensions } from "@opentui/solid"
 import * as fuzzysort from "fuzzysort"
@@ -28,6 +28,8 @@ export interface DialogSelectProps<T> {
   emptyView?: JSX.Element
   options: DialogSelectOption<T>[]
   flat?: boolean
+  // Requires single-line titles/category views; detail lines are included in row heights.
+  virtual?: boolean
   ref?: (ref: DialogSelectRef<T>) => void
   onMove?: (option: DialogSelectOption<T>) => void
   onFilter?: (query: string) => void
@@ -93,6 +95,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     input: "keyboard" as "keyboard" | "mouse",
   })
   const [focusedAction, setFocusedAction] = createSignal<number>()
+  const [scrollTop, setScrollTop] = createSignal(0)
   const actionFocused = createMemo(() => focusedAction() !== undefined)
   let selection: { value: T; category?: string } | undefined
   let resetSelection = false
@@ -201,6 +204,24 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     )
   })
 
+  // Reuse row slots across filtering and regrouping instead of mounting a second catalog.
+  const items = createMemo(() => {
+    let offset = 0
+    return grouped()
+      .flatMap(([category, options], index) => [
+        ...(category
+          ? [{ category, option: undefined, padding: index > 0 ? 1 : 0, view: options[0]?.categoryView }]
+          : []),
+        ...options.map((option) => ({ category, option, padding: 0, view: undefined })),
+      ])
+      .map((item) => {
+        const height = item.option ? 1 + (item.option.details?.length ?? 0) : 1 + item.padding
+        const result = { ...item, offset, height }
+        offset += height
+        return result
+      })
+  })
+
   const rows = createMemo(() => {
     const headers = grouped().reduce((acc, [category], i) => {
       if (!category) return acc
@@ -211,6 +232,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const dimensions = useTerminalDimensions()
   const height = createMemo(() => Math.min(rows(), Math.floor(dimensions().height / 2) - 6))
+  const visible = createMemo(() =>
+    props.virtual
+      ? items().filter(
+          (item) => item.offset + item.height > scrollTop() - height() && item.offset < scrollTop() + height() * 2,
+        )
+      : items(),
+  )
 
   const selected = createMemo(() => flat()[store.selected])
 
@@ -310,6 +338,15 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   function scrollToSelection(center: boolean) {
     if (!scroll) return
+    if (props.virtual) {
+      const target = items().find((item) => item.option && isDeepEqual(item.option.value, selected()?.value))
+      if (!target) return
+      if (center) scroll.scrollTo(target.offset - Math.floor(scroll.height / 2))
+      else if (target.offset < scroll.scrollTop) scroll.scrollTo(target.offset)
+      else if (target.offset + target.height > scroll.scrollTop + scroll.height)
+        scroll.scrollTo(target.offset + target.height - scroll.height)
+      return
+    }
     let remaining = store.selected
     let index = 0
     // Locate the row by position because a unique renderable ID cannot currently be ensured.
@@ -612,105 +649,120 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             paddingRight={1}
             scrollbarOptions={{ visible: false }}
             scrollAcceleration={scrollAcceleration()}
-            ref={(r: ScrollBoxRenderable) => (scroll = r)}
+            ref={(r: ScrollBoxRenderable) => {
+              scroll = r
+              const update = ({ position }: { position: number }) => setScrollTop(position)
+              r.verticalScrollBar.on("change", update)
+              onCleanup(() => r.verticalScrollBar.off("change", update))
+            }}
             maxHeight={height()}
           >
-            <For each={grouped()}>
-              {([category, options], index) => (
-                <>
-                  <Show when={category}>
-                    <box paddingTop={index() > 0 ? 1 : 0} paddingLeft={3}>
+            <Show when={props.virtual}>
+              <box height={visible()[0]?.offset ?? 0} flexShrink={0} />
+            </Show>
+            <Index each={visible()}>
+              {(item) => (
+                <Show
+                  when={item().option}
+                  fallback={
+                    <box paddingTop={item().padding} paddingLeft={3}>
                       <Show
-                        when={options[0]?.categoryView}
+                        when={item().view}
                         fallback={
                           <text fg={theme.accent} attributes={TextAttributes.BOLD}>
-                            {category}
+                            {item().category}
                           </text>
                         }
                       >
-                        {options[0]?.categoryView}
+                        {item().view}
                       </Show>
                     </box>
-                  </Show>
-                  <For each={options}>
-                    {(option) => {
-                      const active = createMemo(() => !props.locked && isDeepEqual(option.value, selected()?.value))
-                      const current = createMemo(() => isDeepEqual(option.value, props.current))
-                      return (
+                  }
+                >
+                  {(option) => {
+                    const active = createMemo(() => !props.locked && isDeepEqual(option().value, selected()?.value))
+                    const current = createMemo(() => isDeepEqual(option().value, props.current))
+                    return (
+                      <box
+                        flexDirection="column"
+                        position="relative"
+                        onMouseMove={() => {
+                          if (props.locked) return
+                          setStore("input", "mouse")
+                          setFocusedAction(undefined)
+                        }}
+                        onMouseUp={() => {
+                          if (props.locked) return
+                          const value = option()
+                          value.onSelect?.(dialog)
+                          props.onSelect?.(value)
+                        }}
+                        onMouseOver={() => {
+                          if (props.locked) return
+                          if (store.input !== "mouse") return
+                          const index = flat().findIndex((x) => isDeepEqual(x.value, option().value))
+                          if (index === -1) return
+                          moveTo(index)
+                        }}
+                        onMouseDown={() => {
+                          if (props.locked) return
+                          const index = flat().findIndex((x) => isDeepEqual(x.value, option().value))
+                          if (index === -1) return
+                          moveTo(index)
+                        }}
+                      >
                         <box
-                          flexDirection="column"
-                          position="relative"
-                          onMouseMove={() => {
-                            if (props.locked) return
-                            setStore("input", "mouse")
-                            setFocusedAction(undefined)
-                          }}
-                          onMouseUp={() => {
-                            if (props.locked) return
-                            option.onSelect?.(dialog)
-                            props.onSelect?.(option)
-                          }}
-                          onMouseOver={() => {
-                            if (props.locked) return
-                            if (store.input !== "mouse") return
-                            const index = flat().findIndex((x) => isDeepEqual(x.value, option.value))
-                            if (index === -1) return
-                            moveTo(index)
-                          }}
-                          onMouseDown={() => {
-                            if (props.locked) return
-                            const index = flat().findIndex((x) => isDeepEqual(x.value, option.value))
-                            if (index === -1) return
-                            moveTo(index)
-                          }}
+                          flexDirection="row"
+                          paddingLeft={current() || option().gutter ? 1 : 3}
+                          paddingRight={3}
+                          gap={1}
+                          backgroundColor={
+                            active()
+                              ? actionFocused()
+                                ? theme.backgroundElement
+                                : (option().bg ?? theme.primary)
+                              : RGBA.fromInts(0, 0, 0, 0)
+                          }
                         >
-                          <box
-                            flexDirection="row"
-                            paddingLeft={current() || option.gutter ? 1 : 3}
-                            paddingRight={3}
-                            gap={1}
-                            backgroundColor={
-                              active()
-                                ? actionFocused()
-                                  ? theme.backgroundElement
-                                  : (option.bg ?? theme.primary)
-                                : RGBA.fromInts(0, 0, 0, 0)
-                            }
-                          >
-                            <Show when={!current() && option.margin}>
-                              <box position="absolute" left={1} flexShrink={0}>
-                                {option.margin}
-                              </box>
-                            </Show>
-                            <Option
-                              title={option.title}
-                              titleView={option.titleView}
-                              footer={flatten() ? (option.category ?? option.footer) : option.footer}
-                              titleWidth={option.titleWidth}
-                              truncateTitle={option.truncateTitle}
-                              description={option.description !== category ? option.description : undefined}
-                              active={active()}
-                              current={current()}
-                              muted={actionFocused()}
-                              gutter={option.gutter}
-                            />
-                          </box>
-                          <For each={option.details}>
-                            {(detail) => (
-                              <box paddingLeft={3} paddingRight={3}>
-                                <text fg={theme.textMuted} wrapMode="none">
-                                  {Locale.truncateMiddle(detail, Math.max(1, Math.min(76, dimensions().width - 12)))}
-                                </text>
-                              </box>
-                            )}
-                          </For>
+                          <Show when={!current() && option().margin}>
+                            <box position="absolute" left={1} flexShrink={0}>
+                              {option().margin}
+                            </box>
+                          </Show>
+                          <Option
+                            title={option().title}
+                            titleView={option().titleView}
+                            footer={flatten() ? (option().category ?? option().footer) : option().footer}
+                            titleWidth={option().titleWidth}
+                            truncateTitle={option().truncateTitle}
+                            description={option().description !== item().category ? option().description : undefined}
+                            active={active()}
+                            current={current()}
+                            muted={actionFocused()}
+                            gutter={option().gutter}
+                          />
                         </box>
-                      )
-                    }}
-                  </For>
-                </>
+                        <For each={option().details}>
+                          {(detail) => (
+                            <box paddingLeft={3} paddingRight={3}>
+                              <text fg={theme.textMuted} wrapMode="none">
+                                {Locale.truncateMiddle(detail, Math.max(1, Math.min(76, dimensions().width - 12)))}
+                              </text>
+                            </box>
+                          )}
+                        </For>
+                      </box>
+                    )
+                  }}
+                </Show>
               )}
-            </For>
+            </Index>
+            <Show when={props.virtual}>
+              <box
+                height={rows() - ((visible().at(-1)?.offset ?? 0) + (visible().at(-1)?.height ?? 0))}
+                flexShrink={0}
+              />
+            </Show>
           </scrollbox>
         </Show>
       </box>

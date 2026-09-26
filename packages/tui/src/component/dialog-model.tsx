@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { batch, createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -140,18 +140,21 @@ export function DialogModel(props: { providerID?: string }) {
   })
 
   function onSelect(providerID: string, modelID: string) {
-    local.model.set({ providerID, modelID }, { recent: true })
-    const list = local.model.variant.list()
-    const cur = local.model.variant.selected()
-    if (cur === "default" || (cur && list.includes(cur))) {
+    // Dispose the picker before updating its large, recently reordered model list.
+    batch(() => {
+      local.model.set({ providerID, modelID }, { recent: true })
+      const list = local.model.variant.list()
+      const cur = local.model.variant.selected()
+      if (cur === "default" || (cur && list.includes(cur))) {
+        dialog.clear()
+        return
+      }
+      if (list.length > 0) {
+        dialog.replace(() => <DialogVariant />)
+        return
+      }
       dialog.clear()
-      return
-    }
-    if (list.length > 0) {
-      dialog.replace(() => <DialogVariant />)
-      return
-    }
-    dialog.clear()
+    })
   }
 
   return (
@@ -176,6 +179,7 @@ export function DialogModel(props: { providerID?: string }) {
       ]}
       onFilter={setQuery}
       flat={true}
+      virtual={true}
       skipFilter={true}
       title={title()}
       current={local.model.current()}
