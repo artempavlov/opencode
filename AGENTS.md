@@ -1,8 +1,8 @@
 - To regenerate the legacy JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
 - After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+- The default branch of this fork is `fixes-1.18.32`; the upstream default is `dev`.
+- Local `main` ref may not exist; use `v1.18.32` to review the local fixes and `origin/fixes-1.18.32` to review new work.
 - This local checkout carries a Bun SQLite contention patch. See `SQLITE-CONCURRENCY-FIX.md` for its bounds, isolated regression tests, build, installation, and rollback. Never run contention tests against the production database.
 - This fork is based on v1.18.32 and also carries the virtualized model picker fix. See `LOCAL-FIXES.md` for the combined build, installation, and verification. Preserve both fixes when updating upstream.
 
