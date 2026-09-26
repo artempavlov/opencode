@@ -4,6 +4,7 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - This local checkout carries a Bun SQLite contention patch. See `SQLITE-CONCURRENCY-FIX.md` for its bounds, isolated regression tests, build, installation, and rollback. Never run contention tests against the production database.
+- This fork is based on v1.18.32 and also carries the virtualized model picker fix. See `LOCAL-FIXES.md` for the combined build, installation, and verification. Preserve both fixes when updating upstream.
 
 ## Branch Names
 

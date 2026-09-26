@@ -1,7 +1,10 @@
 # Local SQLite contention fix
 
-Base: upstream OpenCode v1.18.29 (`16747470f976aca3d362ad730bcd3fe82ecc2c9a`).
-Local binary version: `1.18.29-sqlite-fix.1`. Verified on 2026-09-09.
+Original base: upstream OpenCode v1.18.29 (`16747470f976aca3d362ad730bcd3fe82ecc2c9a`).
+The patch is now carried on v1.18.32 with the model picker fix in
+`1.18.32-local-fixes.1`. See `LOCAL-FIXES.md` for the current combined build.
+The original isolated verification below was performed on 2026-09-09;
+the same 69 tests passed against the combined build on 2026-09-26.
 
 ## Finding and limits
 
@@ -63,7 +66,7 @@ From the repository root, install dependencies with
 `bun install --frozen-lockfile --ignore-scripts`. From `packages/opencode`:
 
 ```sh
-OPENCODE_VERSION=1.18.29-sqlite-fix.1 OPENCODE_CHANNEL=latest \
+OPENCODE_VERSION=1.18.32-local-fixes.1 OPENCODE_CHANNEL=latest \
   bun run script/build.ts --single --skip-install --skip-embed-web-ui
 ```
 
@@ -74,7 +77,7 @@ The resulting standalone binary is `dist/opencode-linux-x64/bin/opencode`.
 For local npm packaging, change the generated platform package's `name` to
 `opencode-ai`, add `"bin": {"opencode": "bin/opencode"}`, then run `npm pack`
 from that directory. Keep the tarball under the ignored `local-release/` in the
-persistent checkout at `/home/artem/data/projects_active/opencode-sqlite-fix`.
+persistent checkout at `/home/artem/data/projects_active/opencode-fork`.
 Install the tarball using `npm install --global /absolute/path/to/tarball`.
 
 Global `~/.config/opencode/opencode.jsonc` has `autoupdate: false` so upstream
